@@ -1,0 +1,6 @@
+# ENV
+.env
+.replit
+
+__pycache__/
+poetry.lock
