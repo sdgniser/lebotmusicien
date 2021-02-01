@@ -15,7 +15,7 @@ ytdlopts = {
     'format': 'bestaudio/best',
     'outtmpl': 'downloads/%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    'noplaylist': True,
+    # 'noplaylist': True,
     'nocheckcertificate': True,
     'ignoreerrors': False,
     'logtostderr': False,
@@ -68,16 +68,27 @@ class YTDLSource(discord.PCMVolumeTransformer):
         to_run = partial(ytdl.extract_info, url=search, download=download)
         data = await loop.run_in_executor(None, to_run)
 
+        sources = []
+        song_count = 0
         if 'entries' in data:
-            # take first item from a playlist
-            data = data['entries'][0]
+            data = data['entries']
+            for entry in data:
+                song_count += 1
 
-        await ctx.send(f'```ini\n[Added {data["title"]} to the Queue.]\n```', delete_after=15)
+                # download == True is unhandled
+                if download:
+                    source = ytdl.prepare_filename(entry)
+                else:
+                    source = {'webpage_url': entry['webpage_url'], 'requester': ctx.author, 'title': entry['title']}
 
-        if download:
-            source = ytdl.prepare_filename(data)
-        else:
-            return {'webpage_url': data['webpage_url'], 'requester': ctx.author, 'title': data['title']}
+                sources.append(source)
+
+            if song_count == 1:
+                await ctx.send(f'```ini\n[Added {entry["title"]} to the Queue.]\n```', delete_after=15)
+            else:
+                await ctx.send(f'```ini\n[Added {song_count} songs to the Queue.]\n```', delete_after=15)
+
+            return sources
 
         return cls(discord.FFmpegPCMAudio(source), data=data, requester=ctx.author)
 
@@ -277,9 +288,14 @@ class Music(commands.Cog):
 
         # If download is False, source will be a dict which will be used later to regather the stream.
         # If download is True, source will be a discord.FFmpegPCMAudio with a VolumeTransformer.
-        source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop, download=False)
+        sources = await YTDLSource.create_source(ctx, search, loop=self.bot.loop, download=False)
 
-        await player.queue.put(source)
+        if len(sources) > 1:
+            for source in sources:
+                await player.queue.put(source)
+        else:
+            await player.queue.put(sources[0])
+        
 
     @commands.command(name='pause', aliases=['//', 'pp'])
     async def pause_(self, ctx):
